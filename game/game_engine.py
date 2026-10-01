@@ -66,27 +66,58 @@ class GameEngine:
 
         self.ball.move()
 
-        if self.ball.x - self.ball.radius <= 0 or self.ball.x + self.ball.radius >= self.width:
-            self.ball.vx *= -1
+        # Walls: use abs() so the ball can never get stuck inside a wall
+        if self.ball.x - self.ball.radius <= 0:
+            self.ball.x = self.ball.radius
+            self.ball.vx = abs(self.ball.vx)
+        elif self.ball.x + self.ball.radius >= self.width:
+            self.ball.x = self.width - self.ball.radius
+            self.ball.vx = -abs(self.ball.vx)
         if self.ball.y - self.ball.radius <= 0:
-            self.ball.vy *= -1
+            self.ball.y = self.ball.radius
+            self.ball.vy = abs(self.ball.vy)
 
-        if self.ball.rect().colliderect(self.paddle.rect()):
-            # NOTE: always flips the ball's vertical velocity on a
-            # paddle collision, regardless of which side of the paddle
-            # was actually hit. See Task 1 in the README.
-            self.ball.vy *= -1
+        # Paddle: only bounce when moving down; angle depends on hit position
+        paddle = self.paddle.rect()
+        if self.ball.vy > 0 and self.ball.rect().colliderect(paddle):
+            side = self._collision_side(paddle)
+            if side == "top":
+                self.ball.y = paddle.top - self.ball.radius
+                speed = (self.ball.vx ** 2 + self.ball.vy ** 2) ** 0.5
+                offset = (self.ball.x - paddle.centerx) / (paddle.width / 2)
+                offset = max(-1.0, min(1.0, offset))
+                self.ball.vx = speed * 0.8 * offset
+                if abs(self.ball.vx) < 1:
+                    self.ball.vx = 1 if self.ball.vx >= 0 else -1
+                self.ball.vy = -max(2.0, (speed ** 2 - self.ball.vx ** 2) ** 0.5)
+            else:
+                # Hit the side of the paddle: push sideways
+                if side == "left":
+                    self.ball.x = paddle.left - self.ball.radius
+                    self.ball.vx = -abs(self.ball.vx)
+                else:
+                    self.ball.x = paddle.right + self.ball.radius
+                    self.ball.vx = abs(self.ball.vx)
 
+        # Bricks: flip vx or vy depending on which side was hit
         for brick in self.bricks:
             if brick.alive and self.ball.rect().colliderect(brick.rect()):
                 brick.alive = False
                 self.score += 1
-                # NOTE: same unconditional vertical-velocity flip as
-                # the paddle collision above - a brick hit from the
-                # left or right should redirect the ball sideways
-                # (flip vx), but this always flips vy instead. See
-                # Task 1 in the README.
-                self.ball.vy *= -1
+                r = brick.rect()
+                side = self._collision_side(r)
+                if side == "top":
+                    self.ball.y = r.top - self.ball.radius
+                    self.ball.vy = -abs(self.ball.vy)
+                elif side == "bottom":
+                    self.ball.y = r.bottom + self.ball.radius
+                    self.ball.vy = abs(self.ball.vy)
+                elif side == "left":
+                    self.ball.x = r.left - self.ball.radius
+                    self.ball.vx = -abs(self.ball.vx)
+                else:
+                    self.ball.x = r.right + self.ball.radius
+                    self.ball.vx = abs(self.ball.vx)
                 break
 
         if self.ball.y - self.ball.radius > self.height:
@@ -100,6 +131,19 @@ class GameEngine:
         if all(not b.alive for b in self.bricks):
             self.game_over = True
             self.result = "win"
+
+    def _collision_side(self, rect):
+        """Return which side of rect the ball hit, using the smallest overlap."""
+        b = self.ball.rect()
+        overlap_left = b.right - rect.left
+        overlap_right = rect.right - b.left
+        overlap_top = b.bottom - rect.top
+        overlap_bottom = rect.bottom - b.top
+        min_x = min(overlap_left, overlap_right)
+        min_y = min(overlap_top, overlap_bottom)
+        if min_x < min_y:
+            return "left" if overlap_left < overlap_right else "right"
+        return "top" if overlap_top < overlap_bottom else "bottom"
 
     def _reset_ball(self):
         self.ball.x, self.ball.y = self.width // 2, self.height - 50
